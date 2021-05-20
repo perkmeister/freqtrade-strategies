@@ -86,9 +86,11 @@ class CombinedBinHAndClucV6H(IStrategy):
         'buy_bin_bbdelta_close': 0.031,
         'buy_bin_closedelta_close': 0.018,
         'buy_bin_tail_bbdelta': 0.233,
-        
+        'buy_bin_guard': True,
+
         'buy_cluc_close_bblowerband': 0.993,
         'buy_cluc_volume': 21,
+        'buy_cluc_guard': True,
 
         'buy_long_rsi_diff': 43.276, 
 
@@ -128,8 +130,10 @@ class CombinedBinHAndClucV6H(IStrategy):
         'buy_bin_bbdelta_close': False,
         'buy_bin_closedelta_close': False,
         'buy_bin_tail_bbdelta': False,
+        'buy_bin_guard': False,
         'buy_cluc_close_bblowerband': False,
         'buy_cluc_volume': False,
+        'buy_cluc_guard': False,
         'buy_long_rsi_diff': False,
         'buy_bin_enable': False,
         'buy_cluc_enable': False,
@@ -144,10 +148,12 @@ class CombinedBinHAndClucV6H(IStrategy):
     buy_bin_bbdelta_close =  DecimalParameter(0.0, 0.05, default=0.031, space='buy', optimize=cust_optimize['buy_bin_bbdelta_close'], load=True)
     buy_bin_closedelta_close = DecimalParameter(0.0, 0.03, default=0.018, decimals=4, space='buy', optimize=cust_optimize['buy_bin_closedelta_close'], load=True)
     buy_bin_tail_bbdelta = DecimalParameter(0.0, 1.0, default=0.233, decimals=3, space='buy', optimize=cust_optimize['buy_bin_tail_bbdelta'], load=True)
+    buy_bin_guard = CategoricalParameter([True, False], default=True, space='buy', optimize=cust_optimize['buy_bin_guard'], load=True)
 
     # cluc buy parameters
     buy_cluc_close_bblowerband = DecimalParameter(0.0, 1.5, default=0.993, decimals=3, space='buy', optimize=cust_optimize['buy_cluc_close_bblowerband'], load=True)
     buy_cluc_volume = IntParameter(10, 40, default=21, space='buy', optimize=cust_optimize['buy_cluc_volume'], load=True)
+    buy_cluc_guard = CategoricalParameter([True, False], default=True, space='buy', optimize=cust_optimize['buy_cluc_guard'], load=True)
 
     # log buy parameters
     buy_long_rsi_diff = DecimalParameter(40, 45, default=43.276, decimals=3, space='buy', optimize=cust_optimize['buy_long_rsi_diff'], load=True)
@@ -182,17 +188,6 @@ class CombinedBinHAndClucV6H(IStrategy):
             inplace=True)
 
         return dataframe
-
-
-    """
-    Informative Pairs
-    """
-    def informative_pairs(self):
-
-        informative_pairs = [(pair, self.informative_timeframe) for pair in pairs]
-
-        return informative_pairs
-
 
     """
     Informative Timeframe Indicators
@@ -286,11 +281,17 @@ class CombinedBinHAndClucV6H(IStrategy):
         # strategy BinHV45 + guards by @iterativ
         dataframe.loc[
             (
-                # @iterativ adition
-                (dataframe['close'] > dataframe['ema_200_1h']) &
-                (dataframe['ema_50'] > dataframe['ema_200']) &
-                (dataframe['ema_50_1h'] > dataframe['ema_200_1h']) &
-                
+                # @iterativ adition (guard)
+                (
+                    (
+                        (dataframe['close'] > dataframe['ema_200_1h']) &
+                        (dataframe['ema_50'] > dataframe['ema_200']) &
+                        (dataframe['ema_50_1h'] > dataframe['ema_200_1h']) &
+                        (self.buy_bin_guard.value == True)
+                    ) |
+                    (self.buy_bin_guard.value == False)
+                ) &
+
                 # strategy BinHV45
                 dataframe['lower'].shift().gt(0) &
 
@@ -308,10 +309,16 @@ class CombinedBinHAndClucV6H(IStrategy):
         # strategy ClucMay72018 + guards by @iterativ
         dataframe.loc[
             (   
-                # @iterativ addition
-                (dataframe['close'] > dataframe['ema_200']) &
-                (dataframe['close'] > dataframe['ema_200_1h']) &
-                
+                # @iterativ addition (guard)
+                (
+                    (
+                        (dataframe['close'] > dataframe['ema_200']) &
+                        (dataframe['close'] > dataframe['ema_200_1h']) &
+                        (self.buy_cluc_guard.value == True)
+                    ) |
+                    (self.buy_cluc_guard.value == False)
+                ) &
+
                 # strategy ClucMay72018
                 (dataframe['close'] < dataframe['ema_50']) &
                 (dataframe['close'] < self.buy_cluc_close_bblowerband.value * dataframe['bb_lowerband']) &
