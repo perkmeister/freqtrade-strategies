@@ -5,6 +5,7 @@ import logging
 import pandas as pd
 import numpy as np
 from pandas import DataFrame, Series, DatetimeIndex, merge
+from freqtrade.exchange import timeframe_to_minutes
 from freqtrade.strategy import IStrategy, IntParameter, DecimalParameter, CategoricalParameter, merge_informative_pair
 from freqtrade.persistence import Trade
 from datetime import datetime, timedelta
@@ -175,24 +176,20 @@ class CombinedBinHAndClucV6H(IStrategy):
 
 
     """
-    Merge Function
+    Informative Pairs
     """
-    def merge_informative(self, informative: DataFrame, dataframe: DataFrame) -> DataFrame:
+    def informative_pairs(self):
 
-        dataframe = merge_informative_pair(dataframe, informative, self.timeframe, self.informative_timeframe, ffill=True)
+        pairs = self.dp.current_whitelist()
+        informative_pairs = [(pair, self.informative_timeframe) for pair in pairs]
 
-        # don't overwrite the base dataframe's HLCV information
-        skip_columns = [(s + "_" + self.informative_timeframe) for s in ['date', 'open', 'high', 'low', 'close', 'volume', 'ema_50', 'ema_200', 'rsi', 'ssl-dir' ]]
-        dataframe.rename(
-            columns=lambda s: s.replace("_{}".format(self.informative_timeframe), "") if (not s in skip_columns) else s,
-            inplace=True)
+        return informative_pairs
 
-        return dataframe
 
     """
     Informative Timeframe Indicators
     """
-    def get_informative_indicators(self, metadata: dict):
+    def get_informative_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
 
         dataframe = self.dp.get_pair_dataframe(pair=metadata['pair'], timeframe=self.informative_timeframe)
 
@@ -254,12 +251,15 @@ class CombinedBinHAndClucV6H(IStrategy):
     Populate Informative and Main Timeframe Indicators
     """
     def populate_indicators(self, dataframe: DataFrame, metadata: dict) -> DataFrame:
-        if not self.dp:
-            return dataframe
+   
+        if self.config['runmode'].value in ('backtest', 'hyperopt'):
+            assert (timeframe_to_minutes(self.timeframe) <= 5), "Backtest this strategy in a timeframe of 5m or less."
 
-        informative = self.get_informative_indicators(metadata)
-        dataframe = self.merge_informative(informative, dataframe)
-        dataframe = self.get_main_indicators(dataframe, metadata)            
+        assert self.dp, "DataProvider is required for multiple timeframes."
+
+        informative = self.get_informative_indicators(dataframe, metadata)
+        dataframe = merge_informative_pair(dataframe, informative, self.timeframe, self.informative_timeframe, ffill=True)
+        dataframe = self.get_main_indicators(dataframe, metadata)
 
         return dataframe
 
